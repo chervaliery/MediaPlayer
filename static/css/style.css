@@ -186,12 +186,20 @@ a:hover {
   content: "🖼 ";
 }
 
+.browse-list .browse-item-audio::before {
+  content: "🎵 ";
+}
+
+.browse-list .browse-item-text::before {
+  content: "📝 ";
+}
+
 .browse-list .browse-item-file::before {
   content: "📄 ";
 }
 
 /* -----------------------------------------------------------------------------
-   View (video / image) pages
+   View (video / image / audio / text / unknown) pages
    ----------------------------------------------------------------------------- */
 .view-back {
   display: inline-block;
@@ -220,4 +228,59 @@ a:hover {
 
 .view-media-wrap video {
   width: 100%;
+}
+
+.view-media-wrap audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.view-filename {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  word-break: break-all;
+}
+
+.view-download {
+  margin: 1rem 0 0 0;
+}
+
+.view-download-btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  min-height: 44px;
+  line-height: 2;
+  background: var(--link);
+  color: #fff;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.view-download-btn:hover {
+  opacity: 0.9;
+  color: #fff;
+  text-decoration: none;
+}
+
+.view-text-content {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 70vh;
+  overflow: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.view-text-message,
+.view-unknown-message {
+  color: var(--text-muted);
+  margin: 0.5rem 0;
 }

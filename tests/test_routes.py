@@ -78,7 +78,13 @@ class TestView:
         assert response.status_code == 200
         assert "video" in (response.content_type or "")
 
-    def test_view_unknown_type_returns_404(self, client):
-        """GET /view?path=file.txt returns 404 (unknown type)."""
-        response = client.get("/view", query_string={"path": "file.txt"})
-        assert response.status_code == 404
+    def test_view_unknown_type_returns_viewer(self, client):
+        """GET /view?path=unknown.xyz returns 200 and unknown-type viewer with download."""
+        response = client.get(
+            "/view",
+            query_string={"path": "unknown.xyz"},
+            headers={"Accept": "text/html"},
+        )
+        assert response.status_code == 200
+        assert b"Unknown file type" in response.data
+        assert b"Download" in response.data

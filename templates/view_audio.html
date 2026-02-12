@@ -1,0 +1,9 @@
+{% extends "view_file_base.html" %}
+{% block title %}Audio{% endblock %}
+{% block file_content %}
+  <div class="view-media-wrap">
+    <audio controls preload="metadata" src="{{ url_for('view', path=path) }}">
+      Your browser does not support the audio tag.
+    </audio>
+  </div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "view_file_base.html" %}
+{% block title %}Text{% endblock %}
+{% block file_content %}
+  {% if message %}
+  <p class="view-text-message">{{ message }}</p>
+  {% else %}
+  <pre class="view-text-content">{{ content }}</pre>
+  {% endif %}
+{% endblock %}

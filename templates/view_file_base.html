@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <p><a href="{{ url_for('browse') }}" class="view-back">Back to browse</a></p>
+  <h2 class="view-filename">{{ filename }}</h2>
+  {% block file_content %}{% endblock %}
+  <p class="view-download">
+    <a href="{{ url_for('view', path=path, download=1) }}" class="view-download-btn">Download</a>
+  </p>
+{% endblock %}

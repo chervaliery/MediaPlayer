@@ -129,6 +129,41 @@ IMAGE_MIME = {
     ".webp": "image/webp",
 }
 
+AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav", ".flac", ".m4a", ".aac"}
+AUDIO_MIME = {
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+}
+
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".json", ".xml", ".csv", ".log",
+    ".py", ".html", ".htm", ".css", ".js", ".yaml", ".yml", ".ini", ".cfg",
+}
+TEXT_MIME = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".csv": "text/csv",
+    ".log": "text/plain",
+    ".py": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".css": "text/css",
+    ".js": "application/javascript",
+    ".yaml": "text/yaml",
+    ".yml": "text/yaml",
+    ".ini": "text/plain",
+    ".cfg": "text/plain",
+}
+
+# Max bytes to load for text view (512 KB)
+TEXT_VIEW_MAX_BYTES = 512 * 1024
+
 
 def get_mime(path: Path) -> str | None:
     """Return MIME type for path by extension, or None if unknown."""
@@ -137,6 +172,10 @@ def get_mime(path: Path) -> str | None:
         return VIDEO_MIME[ext]
     if ext in IMAGE_MIME:
         return IMAGE_MIME[ext]
+    if ext in AUDIO_MIME:
+        return AUDIO_MIME[ext]
+    if ext in TEXT_MIME:
+        return TEXT_MIME[ext]
     return None
 
 
@@ -148,6 +187,29 @@ def is_video(path: Path) -> bool:
 def is_image(path: Path) -> bool:
     """Return True if path has a known image extension."""
     return path.suffix.lower() in IMAGE_EXTENSIONS
+
+
+def is_audio(path: Path) -> bool:
+    """Return True if path has a known audio extension."""
+    return path.suffix.lower() in AUDIO_EXTENSIONS
+
+
+def is_text(path: Path) -> bool:
+    """Return True if path has a known text extension."""
+    return path.suffix.lower() in TEXT_EXTENSIONS
+
+
+def _file_view_type(path: Path) -> str:
+    """Return view type: video, image, audio, text, or unknown."""
+    if is_video(path):
+        return "video"
+    if is_image(path):
+        return "image"
+    if is_audio(path):
+        return "audio"
+    if is_text(path):
+        return "text"
+    return "unknown"
 
 
 # -----------------------------------------------------------------------------
@@ -198,6 +260,10 @@ def browse():
                 icon = "video"
             elif is_image(entry):
                 icon = "image"
+            elif is_audio(entry):
+                icon = "audio"
+            elif is_text(entry):
+                icon = "text"
             else:
                 icon = "file"
             items.append({
@@ -222,35 +288,93 @@ def redirect_to_view(rel_path: str):
     return redirect(url_for("view", path=rel_path))
 
 
+_VIEW_TEMPLATES = {
+    "video": "view_video.html",
+    "image": "view_image.html",
+    "audio": "view_audio.html",
+    "unknown": "view_unknown.html",
+}
+
+
+def _render_file_view(view_type: str, resolved: Path, view_kwargs: dict):
+    """Return the HTML viewer response for the given type."""
+    if view_type == "text":
+        try:
+            size = resolved.stat().st_size
+            if size > TEXT_VIEW_MAX_BYTES:
+                return render_template(
+                    "view_text.html",
+                    **view_kwargs,
+                    content=None,
+                    message="File too large to display.",
+                )
+            content = resolved.read_bytes().decode("utf-8", errors="replace")
+            return render_template(
+                "view_text.html", **view_kwargs, content=content, message=None
+            )
+        except OSError:
+            abort(404)
+    template = _VIEW_TEMPLATES.get(view_type, "view_unknown.html")
+    return render_template(template, **view_kwargs)
+
+
+def _stream_file(view_type: str, resolved: Path):
+    """Return the streaming response for the given type."""
+    stream_mime = get_mime(resolved)
+    if view_type == "video":
+        return send_file(
+            resolved,
+            mimetype=stream_mime or "video/unknown",
+            conditional=True,
+            as_attachment=False,
+        )
+    mime_map = {
+        "image": stream_mime or "image/unknown",
+        "audio": stream_mime or "audio/unknown",
+        "text": stream_mime or "text/plain",
+    }
+    if view_type in mime_map:
+        return send_file(
+            resolved, mimetype=mime_map[view_type], as_attachment=False
+        )
+    return send_file(
+        resolved,
+        mimetype="application/octet-stream",
+        as_attachment=True,
+        download_name=resolved.name,
+    )
+
+
 @app.route("/view")
 def view():
-    """Stream video/image file or return viewer HTML depending on Accept/embed."""
+    """Stream file or return viewer HTML; supports ?download=1 for attachment."""
     raw = request.args.get("path", "").strip()
     resolved = resolve_safe(raw, must_be_file=True)
     if resolved is None:
         abort(403)
     if not resolved.is_file():
         abort(404)
-    # Optional: if client wants HTML (e.g. Accept or ?embed=1), return viewer page
-    embed = request.args.get("embed", "").lower() in ("1", "true", "yes")
-    if embed or "text/html" in request.headers.get("Accept", ""):
-        path_safe = _sanitize_unicode(raw)
-        if is_video(resolved):
-            return render_template("view_video.html", path=path_safe)
-        if is_image(resolved):
-            return render_template("view_image.html", path=path_safe)
-    # Otherwise stream/send file
-    mime = get_mime(resolved)
-    if not mime:
-        abort(404)
-    if is_video(resolved):
+
+    path_safe = _sanitize_unicode(raw)
+    filename = _sanitize_unicode(resolved.name)
+    view_kwargs = {"path": path_safe, "filename": filename}
+    view_type = _file_view_type(resolved)
+
+    if request.args.get("download", "").lower() in ("1", "true", "yes"):
+        mime = get_mime(resolved) or "application/octet-stream"
         return send_file(
             resolved,
             mimetype=mime,
-            conditional=True,
-            as_attachment=False,
+            as_attachment=True,
+            download_name=resolved.name,
         )
-    return send_file(resolved, mimetype=mime, as_attachment=False)
+
+    if request.args.get("embed", "").lower() in ("1", "true", "yes") or (
+        "text/html" in request.headers.get("Accept", "")
+    ):
+        return _render_file_view(view_type, resolved, view_kwargs)
+
+    return _stream_file(view_type, resolved)
 
 
 # -----------------------------------------------------------------------------
