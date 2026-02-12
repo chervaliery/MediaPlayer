@@ -1,7 +1,7 @@
 # Media player – browse and stream
 
 [![Tests](https://github.com/chervaliery/MediaPlayer/actions/workflows/ci.yml/badge.svg)](https://github.com/chervaliery/MediaPlayer/actions/workflows/ci.yml)
-[![Pylint](https://img.shields.io/badge/pylint-10%2F10-brightgreen)](https://github.com/chervaliery/MediaPlayer/actions/workflows/ci.yml)
+[![Pylint](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/chervaliery/MediaPlayer/main/badges/pylint.json)](https://github.com/chervaliery/MediaPlayer/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/chervaliery/MediaPlayer/graph/badge.svg)](https://codecov.io/gh/chervaliery/MediaPlayer)
 [![CodeQL](https://github.com/chervaliery/MediaPlayer/actions/workflows/codeql.yml/badge.svg)](https://github.com/chervaliery/MediaPlayer/actions/workflows/codeql.yml)
 
