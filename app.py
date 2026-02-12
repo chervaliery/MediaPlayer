@@ -3,6 +3,7 @@ Minimalist media browser: browse dirs under a configured root, stream video, dis
 Path traversal is prevented by resolving all paths under the configured media_root.
 """
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -12,7 +13,12 @@ from flask import Flask, abort, redirect, render_template, request, send_file, u
 # Configuration
 # -----------------------------------------------------------------------------
 
-CONFIG_PATH = os.environ.get("PLAYER_CONFIG", "config.yaml")
+_CONFIG_PATH_ENV = os.environ.get("PLAYER_CONFIG")
+if _CONFIG_PATH_ENV is not None:
+    CONFIG_PATH = _CONFIG_PATH_ENV
+else:
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+    CONFIG_PATH = os.path.join(_app_dir, "config.yaml")
 
 
 def load_config(path: str) -> dict:
@@ -39,6 +45,18 @@ MEDIA_ROOT = get_media_root()
 
 app = Flask(__name__)
 app.config["MEDIA_ROOT"] = MEDIA_ROOT
+
+
+# -----------------------------------------------------------------------------
+# Unicode sanitization (surrogates break URL encoding and UTF-8 responses)
+# -----------------------------------------------------------------------------
+
+_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
+
+
+def _sanitize_unicode(value: str) -> str:
+    """Replace surrogate code points so the string is safe for UTF-8 (URLs, responses)."""
+    return _SURROGATE_RE.sub("\ufffd", value)
 
 
 # -----------------------------------------------------------------------------
@@ -168,7 +186,12 @@ def browse():
         name = entry.name
         if entry.is_dir():
             sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
-            items.append({"name": name + "/", "path": sub_rel, "is_dir": True, "icon": "dir"})
+            items.append({
+                "name": _sanitize_unicode(name) + "/",
+                "path": _sanitize_unicode(sub_rel),
+                "is_dir": True,
+                "icon": "dir",
+            })
         else:
             sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
             if is_video(entry):
@@ -177,10 +200,15 @@ def browse():
                 icon = "image"
             else:
                 icon = "file"
-            items.append({"name": name, "path": sub_rel, "is_dir": False, "icon": icon})
-    current_path = "/" + "/".join(rel_parts) if rel_parts else "/"
+            items.append({
+                "name": _sanitize_unicode(name),
+                "path": _sanitize_unicode(sub_rel),
+                "is_dir": False,
+                "icon": icon,
+            })
+    current_path = _sanitize_unicode("/" + "/".join(rel_parts)) if rel_parts else "/"
     parent_parts = rel_parts[:-1] if rel_parts else []
-    parent_path = os.path.join(*parent_parts) if parent_parts else ""
+    parent_path = _sanitize_unicode(os.path.join(*parent_parts)) if parent_parts else ""
     return render_template(
         "browse.html",
         current_path=current_path,
@@ -206,10 +234,11 @@ def view():
     # Optional: if client wants HTML (e.g. Accept or ?embed=1), return viewer page
     embed = request.args.get("embed", "").lower() in ("1", "true", "yes")
     if embed or "text/html" in request.headers.get("Accept", ""):
+        path_safe = _sanitize_unicode(raw)
         if is_video(resolved):
-            return render_template("view_video.html", path=raw)
+            return render_template("view_video.html", path=path_safe)
         if is_image(resolved):
-            return render_template("view_image.html", path=raw)
+            return render_template("view_image.html", path=path_safe)
     # Otherwise stream/send file
     mime = get_mime(resolved)
     if not mime:
