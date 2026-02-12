@@ -13,6 +13,8 @@ class TestBrowse:
         assert b"image.png" in response.data
         assert b"video.mkv" in response.data
         assert b"file.txt" in response.data
+        assert b"audio.mp3" in response.data
+        assert b"unknown.xyz" in response.data
 
     def test_browse_path_traversal_returns_403(self, client):
         """GET /?path=.. returns 403."""
@@ -88,3 +90,65 @@ class TestView:
         assert response.status_code == 200
         assert b"Unknown file type" in response.data
         assert b"Download" in response.data
+
+    def test_view_audio_with_html_accept_returns_viewer(self, client):
+        """GET /view?path=audio.mp3 with Accept: text/html returns 200 and audio viewer."""
+        response = client.get(
+            "/view",
+            query_string={"path": "audio.mp3"},
+            headers={"Accept": "text/html"},
+        )
+        assert response.status_code == 200
+        assert b"<audio" in response.data
+        assert b"audio.mp3" in response.data
+        assert b"Download" in response.data
+
+    def test_view_audio_without_html_returns_audio_mime(self, client):
+        """GET /view?path=audio.mp3 without HTML returns 200 and audio content type."""
+        response = client.get("/view", query_string={"path": "audio.mp3"})
+        assert response.status_code == 200
+        assert "audio" in (response.content_type or "")
+
+    def test_view_text_with_html_accept_returns_viewer(self, client):
+        """GET /view?path=file.txt with Accept: text/html returns 200 and text in pre."""
+        response = client.get(
+            "/view",
+            query_string={"path": "file.txt"},
+            headers={"Accept": "text/html"},
+        )
+        assert response.status_code == 200
+        assert b"hello" in response.data
+        assert b"file.txt" in response.data
+        assert b"Download" in response.data
+
+    def test_view_text_without_html_returns_text(self, client):
+        """GET /view?path=file.txt without HTML returns 200 and text body."""
+        response = client.get("/view", query_string={"path": "file.txt"})
+        assert response.status_code == 200
+        assert response.data == b"hello"
+
+    def test_view_text_too_large_returns_message(self, client, media_root):
+        """GET /view?path=large.txt with file over limit returns message and download."""
+        from app import TEXT_VIEW_MAX_BYTES
+
+        large = media_root / "large.txt"
+        large.write_bytes(b"x" * (TEXT_VIEW_MAX_BYTES + 1))
+        response = client.get(
+            "/view",
+            query_string={"path": "large.txt"},
+            headers={"Accept": "text/html"},
+        )
+        assert response.status_code == 200
+        assert b"File too large to display" in response.data
+        assert b"Download" in response.data
+
+    def test_view_download_returns_attachment(self, client):
+        """GET /view?path=file.txt&download=1 returns attachment with content."""
+        response = client.get(
+            "/view",
+            query_string={"path": "file.txt", "download": "1"},
+        )
+        assert response.status_code == 200
+        assert response.data == b"hello"
+        disposition = response.headers.get("Content-Disposition", "")
+        assert "attachment" in disposition

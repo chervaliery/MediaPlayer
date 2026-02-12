@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app import get_mime, is_image, is_video
+from app import get_mime, is_audio, is_image, is_text, is_video
 
 
 @pytest.mark.parametrize(
@@ -17,6 +17,14 @@ from app import get_mime, is_image, is_video
         (".png", "image/png"),
         (".gif", "image/gif"),
         (".webp", "image/webp"),
+        (".mp3", "audio/mpeg"),
+        (".ogg", "audio/ogg"),
+        (".wav", "audio/wav"),
+        (".flac", "audio/flac"),
+        (".m4a", "audio/mp4"),
+        (".txt", "text/plain"),
+        (".md", "text/markdown"),
+        (".json", "application/json"),
     ],
 )
 def test_get_mime_known(path_suffix, expected_mime):
@@ -53,3 +61,27 @@ def test_is_image():
     assert is_image(Path("x.mkv")) is False
     assert is_image(Path("x.mp4")) is False
     assert is_image(Path("x")) is False
+
+
+def test_is_audio():
+    """is_audio True for audio extensions, False otherwise."""
+    assert is_audio(Path("x.mp3")) is True
+    assert is_audio(Path("x.ogg")) is True
+    assert is_audio(Path("x.wav")) is True
+    assert is_audio(Path("x.flac")) is True
+    assert is_audio(Path("x.m4a")) is True
+    assert is_audio(Path("x.mkv")) is False
+    assert is_audio(Path("x.txt")) is False
+    assert is_audio(Path("x")) is False
+
+
+def test_is_text():
+    """is_text True for text extensions, False otherwise."""
+    assert is_text(Path("x.txt")) is True
+    assert is_text(Path("x.md")) is True
+    assert is_text(Path("x.json")) is True
+    assert is_text(Path("x.yaml")) is True
+    assert is_text(Path("x.py")) is True
+    assert is_text(Path("x.mkv")) is False
+    assert is_text(Path("x.mp3")) is False
+    assert is_text(Path("x")) is False

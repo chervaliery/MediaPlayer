@@ -11,6 +11,7 @@ def media_root(tmp_path):
     (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (tmp_path / "video.mkv").write_bytes(b"\x00")
     (tmp_path / "file.txt").write_text("hello")
+    (tmp_path / "audio.mp3").write_bytes(b"\xff\xfb\x90\x00")  # minimal mp3-like
     (tmp_path / "unknown.xyz").write_bytes(b"binary")
     return tmp_path.resolve()
 
