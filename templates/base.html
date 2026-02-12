@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Media{% endblock %}</title>
+  <script>
+    (function() {
+      var theme = localStorage.getItem("theme");
+      if (!theme && window.matchMedia) {
+        theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      if (!theme) theme = "light";
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{ url_for('browse') }}" class="site-title">Media</a>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark/light mode">
+      <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+      <span class="theme-icon theme-icon-moon" aria-hidden="true">☽</span>
+    </button>
+  </header>
+  <main class="site-main">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

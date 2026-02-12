@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Video{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('browse') }}" class="view-back">Back to browse</a></p>
+  <div class="view-media-wrap">
+    <video controls preload="metadata" src="{{ url_for('view', path=path) }}">
+      Your browser does not support the video tag.
+    </video>
+  </div>
+{% endblock %}

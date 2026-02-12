@@ -1,0 +1,3 @@
+# Root directory for media browsing. Must exist and be a directory at startup.
+# Use /var/media on the server; use ./media for local testing (create the dir if needed).
+media_root: ./media

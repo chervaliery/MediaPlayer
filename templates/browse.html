@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Browse – {{ current_path }}{% endblock %}
+{% block content %}
+  <h1 class="browse-heading">Browse</h1>
+  <p class="browse-path">Path: {{ current_path }}</p>
+  <ul class="browse-list">
+    {% if current_path != "/" %}
+    <li><a href="{{ url_for('browse', path=parent_path) }}" class="browse-item browse-item-dir">../</a></li>
+    {% endif %}
+    {% for item in items %}
+    <li>
+      {% if item.is_dir %}
+      <a href="{{ url_for('browse', path=item.path) }}" class="browse-item browse-item-dir">{{ item.name }}</a>
+      {% else %}
+      <a href="{{ url_for('view', path=item.path) }}" class="browse-item browse-item-{{ item.icon }}">{{ item.name }}</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

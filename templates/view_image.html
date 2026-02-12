@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Image{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('browse') }}" class="view-back">Back to browse</a></p>
+  <div class="view-media-wrap">
+    <img src="{{ url_for('view', path=path) }}" alt="">
+  </div>
+{% endblock %}
