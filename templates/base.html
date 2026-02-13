@@ -18,7 +18,11 @@
 </head>
 <body>
   <header class="site-header">
+    {% if has_browse %}
     <a href="{{ url_for('browse') }}" class="site-title">Media</a>
+    {% else %}
+    <span class="site-title">Media</span>
+    {% endif %}
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark/light mode">
       <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
       <span class="theme-icon theme-icon-moon" aria-hidden="true">☽</span>

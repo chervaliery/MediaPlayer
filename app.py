@@ -1,6 +1,6 @@
 """
 Minimalist media browser: browse dirs under a configured root, stream video, display images.
-Path traversal is prevented by resolving all paths under the configured media_root.
+Supports mode=private (browse, view, share) or mode=public (token-only view).
 """
 import os
 import re
@@ -30,21 +30,42 @@ def load_config(path: str) -> dict:
     return data
 
 
-def get_media_root() -> Path:
-    """Return the resolved media root path from config. Fails if missing or not a directory."""
-    config = load_config(CONFIG_PATH)
+def _apply_config(config: dict) -> tuple[Path, str]:
+    """Validate config and return (MEDIA_ROOT, MODE)."""
+    mode = config.get("mode", "private")
+    if mode not in ("private", "public"):
+        raise ValueError("config mode must be 'private' or 'public'")
     root = Path(config["media_root"]).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"media_root does not exist: {root}")
     if not root.is_dir():
         raise NotADirectoryError(f"media_root is not a directory: {root}")
-    return root
+    if mode == "public" and not config.get("database"):
+        raise ValueError("config database is required when mode is public")
+    if mode == "private" and config.get("database") and "share_default_expiry_seconds" not in config:
+        raise ValueError("config share_default_expiry_seconds required when database is set (private)")
+    return root, mode
 
 
-MEDIA_ROOT = get_media_root()
+_CONFIG = load_config(CONFIG_PATH)
+_MEDIA_ROOT, _MODE = _apply_config(_CONFIG)
 
 app = Flask(__name__)
-app.config["MEDIA_ROOT"] = MEDIA_ROOT
+app.config["MEDIA_ROOT"] = _MEDIA_ROOT
+app.config["MODE"] = _MODE
+app.config["DATABASE_PATH"] = _CONFIG.get("database")
+app.config["SHARE_DEFAULT_EXPIRY_SECONDS"] = _CONFIG.get("share_default_expiry_seconds", 86400)
+app.config["PUBLIC_BASE_URL"] = _CONFIG.get("public_base_url", "").rstrip("/")
+
+if _MODE == "private" and app.config["DATABASE_PATH"]:
+    import share_store
+    share_store.init(app.config["DATABASE_PATH"])
+
+
+@app.context_processor
+def _inject_template_context():
+    """Expose has_browse so base.html can avoid url_for('browse') in public mode."""
+    return {"has_browse": app.config.get("MODE") == "private"}
 
 
 # -----------------------------------------------------------------------------
@@ -217,72 +238,6 @@ def _file_view_type(path: Path) -> str:
 # -----------------------------------------------------------------------------
 
 
-@app.route("/")
-def browse():
-    """List directory contents under media root, or redirect to view for files."""
-    raw = request.args.get("path", "").strip()
-    resolved = resolve_safe(raw, must_be_dir=False)
-    if resolved is None:
-        abort(403)
-    if resolved.is_file():
-        return redirect_to_view(raw)
-    if not resolved.is_dir():
-        abort(404)
-    # List directory: dirs first, then files
-    root = app.config["MEDIA_ROOT"]
-    try:
-        entries = sorted(
-            list(resolved.iterdir()),
-            key=lambda entry: (not entry.is_dir(), entry.name.lower()),
-        )
-    except OSError:
-        abort(404)
-    # Relative path for links
-    try:
-        rel_dir = resolved.relative_to(root)
-        rel_parts = list(rel_dir.parts)
-    except ValueError:
-        rel_parts = []
-    items = []
-    for entry in entries:
-        name = entry.name
-        if entry.is_dir():
-            sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
-            items.append({
-                "name": _sanitize_unicode(name) + "/",
-                "path": _sanitize_unicode(sub_rel),
-                "is_dir": True,
-                "icon": "dir",
-            })
-        else:
-            sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
-            if is_video(entry):
-                icon = "video"
-            elif is_image(entry):
-                icon = "image"
-            elif is_audio(entry):
-                icon = "audio"
-            elif is_text(entry):
-                icon = "text"
-            else:
-                icon = "file"
-            items.append({
-                "name": _sanitize_unicode(name),
-                "path": _sanitize_unicode(sub_rel),
-                "is_dir": False,
-                "icon": icon,
-            })
-    current_path = _sanitize_unicode("/" + "/".join(rel_parts)) if rel_parts else "/"
-    parent_parts = rel_parts[:-1] if rel_parts else []
-    parent_path = _sanitize_unicode(os.path.join(*parent_parts)) if parent_parts else ""
-    return render_template(
-        "browse.html",
-        current_path=current_path,
-        parent_path=parent_path,
-        items=items,
-    )
-
-
 def redirect_to_view(rel_path: str):
     """Redirect to the view route for the given relative path."""
     return redirect(url_for("view", path=rel_path))
@@ -318,6 +273,41 @@ def _render_file_view(view_type: str, resolved: Path, view_kwargs: dict):
     return render_template(template, **view_kwargs)
 
 
+def serve_resolved_file(
+    resolved: Path,
+    stream_url: str,
+    download_url: str,
+    filename: str,
+    show_share: bool,
+    path_for_share: str,
+):
+    """
+    Handle request for a resolved file: download, HTML viewer, or stream.
+    path_for_share is the path query for Share link (private only); unused when show_share is False.
+    """
+    view_type = _file_view_type(resolved)
+    view_kwargs = {
+        "stream_url": stream_url,
+        "download_url": download_url,
+        "filename": filename,
+        "show_share": show_share,
+        "path": path_for_share,
+    }
+    if request.args.get("download", "").lower() in ("1", "true", "yes"):
+        mime = get_mime(resolved) or "application/octet-stream"
+        return send_file(
+            resolved,
+            mimetype=mime,
+            as_attachment=True,
+            download_name=resolved.name,
+        )
+    if request.args.get("embed", "").lower() in ("1", "true", "yes") or (
+        "text/html" in request.headers.get("Accept", "")
+    ):
+        return _render_file_view(view_type, resolved, view_kwargs)
+    return _stream_file(view_type, resolved)
+
+
 def _stream_file(view_type: str, resolved: Path):
     """Return the streaming response for the given type."""
     stream_mime = get_mime(resolved)
@@ -345,36 +335,194 @@ def _stream_file(view_type: str, resolved: Path):
     )
 
 
-@app.route("/view")
-def view():
-    """Stream file or return viewer HTML; supports ?download=1 for attachment."""
-    raw = request.args.get("path", "").strip()
-    resolved = resolve_safe(raw, must_be_file=True)
-    if resolved is None:
-        abort(403)
-    if not resolved.is_file():
-        abort(404)
+def _register_private_routes():
+    """Register routes for mode=private: browse, view, share."""
 
-    path_safe = _sanitize_unicode(raw)
-    filename = _sanitize_unicode(resolved.name)
-    view_kwargs = {"path": path_safe, "filename": filename}
-    view_type = _file_view_type(resolved)
-
-    if request.args.get("download", "").lower() in ("1", "true", "yes"):
-        mime = get_mime(resolved) or "application/octet-stream"
-        return send_file(
-            resolved,
-            mimetype=mime,
-            as_attachment=True,
-            download_name=resolved.name,
+    @app.route("/")
+    def browse():
+        """List directory contents under media root, or redirect to view for files."""
+        raw = request.args.get("path", "").strip()
+        resolved = resolve_safe(raw, must_be_dir=False)
+        if resolved is None:
+            abort(403)
+        if resolved.is_file():
+            return redirect_to_view(raw)
+        if not resolved.is_dir():
+            abort(404)
+        root = app.config["MEDIA_ROOT"]
+        try:
+            entries = sorted(
+                list(resolved.iterdir()),
+                key=lambda entry: (not entry.is_dir(), entry.name.lower()),
+            )
+        except OSError:
+            abort(404)
+        try:
+            rel_dir = resolved.relative_to(root)
+            rel_parts = list(rel_dir.parts)
+        except ValueError:
+            rel_parts = []
+        items = []
+        for entry in entries:
+            name = entry.name
+            if entry.is_dir():
+                sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
+                items.append({
+                    "name": _sanitize_unicode(name) + "/",
+                    "path": _sanitize_unicode(sub_rel),
+                    "is_dir": True,
+                    "icon": "dir",
+                })
+            else:
+                sub_rel = os.path.join(*rel_parts, name) if rel_parts else name
+                if is_video(entry):
+                    icon = "video"
+                elif is_image(entry):
+                    icon = "image"
+                elif is_audio(entry):
+                    icon = "audio"
+                elif is_text(entry):
+                    icon = "text"
+                else:
+                    icon = "file"
+                items.append({
+                    "name": _sanitize_unicode(name),
+                    "path": _sanitize_unicode(sub_rel),
+                    "is_dir": False,
+                    "icon": icon,
+                })
+        current_path = _sanitize_unicode("/" + "/".join(rel_parts)) if rel_parts else "/"
+        parent_parts = rel_parts[:-1] if rel_parts else []
+        parent_path = _sanitize_unicode(os.path.join(*parent_parts)) if parent_parts else ""
+        return render_template(
+            "browse.html",
+            current_path=current_path,
+            parent_path=parent_path,
+            items=items,
         )
 
-    if request.args.get("embed", "").lower() in ("1", "true", "yes") or (
-        "text/html" in request.headers.get("Accept", "")
-    ):
-        return _render_file_view(view_type, resolved, view_kwargs)
+    @app.route("/view")
+    def view():
+        """Stream file or return viewer HTML; supports ?download=1 for attachment."""
+        raw = request.args.get("path", "").strip()
+        resolved = resolve_safe(raw, must_be_file=True)
+        if resolved is None:
+            abort(403)
+        if not resolved.is_file():
+            abort(404)
+        path_safe = _sanitize_unicode(raw)
+        filename = _sanitize_unicode(resolved.name)
+        stream_url = url_for("view", path=path_safe)
+        download_url = url_for("view", path=path_safe, download=1)
+        return serve_resolved_file(
+            resolved, stream_url, download_url, filename,
+            show_share=True, path_for_share=path_safe,
+        )
 
-    return _stream_file(view_type, resolved)
+    @app.route("/share", methods=["GET", "POST"])
+    def share():
+        """GET: show share form. POST: create or reuse share, redirect to result."""
+        raw = request.args.get("path", "").strip() if request.method == "GET" else request.form.get("path", "").strip()
+        if not raw:
+            abort(400)
+        resolved = resolve_safe(raw, must_be_file=True)
+        if resolved is None or not resolved.is_file():
+            abort(403)
+        path_safe = _sanitize_unicode(raw)
+        db_path = app.config.get("DATABASE_PATH")
+        if not db_path:
+            abort(503)
+        import share_store
+        if request.method == "GET":
+            existing = share_store.get_active_by_file_path(db_path, raw)
+            if existing:
+                return redirect(url_for("share_result", token=existing["token"]))
+            return render_template("share_form.html", path=path_safe)
+        # POST
+        expires = request.form.get("expires", "default")
+        custom_value = request.form.get("custom_value", "").strip()
+        custom_unit = request.form.get("custom_unit", "hours")
+        existing = share_store.get_active_by_file_path(db_path, raw)
+        if existing:
+            return redirect(url_for("share_result", token=existing["token"]))
+        if expires == "never":
+            expires_seconds = None
+        elif expires == "custom" and custom_value.isdigit():
+            val = int(custom_value)
+            if custom_unit == "days":
+                val *= 86400
+            else:
+                val *= 3600
+            expires_seconds = val
+        else:
+            expires_seconds = app.config["SHARE_DEFAULT_EXPIRY_SECONDS"]
+        token = share_store.create_share(db_path, raw, expires_seconds)
+        return redirect(url_for("share_result", token=token))
+
+    @app.route("/share/result")
+    def share_result():
+        """Show share result with public URL, copy and revoke."""
+        token = request.args.get("token", "").strip()
+        if not token:
+            abort(400)
+        base = (app.config.get("PUBLIC_BASE_URL") or "").rstrip("/")
+        if not base:
+            base = request.url_root.rstrip("/")
+        public_url = f"{base}/v/{token}"
+        revoked = request.args.get("revoked", "").strip() == "1"
+        return render_template("share_result.html", token=token, public_url=public_url, revoked=revoked)
+
+    @app.route("/share/revoke", methods=["POST"])
+    def share_revoke():
+        """Revoke a share by token."""
+        token = request.form.get("token", "").strip()
+        if not token:
+            abort(400)
+        db_path = app.config.get("DATABASE_PATH")
+        if not db_path:
+            abort(503)
+        import share_store
+        share_store.revoke(db_path, token)
+        return redirect(url_for("share_result", token=token, revoked=1))
+
+
+def _register_public_routes():
+    """Register routes for mode=public: only GET /v/<token>."""
+
+    @app.route("/v/<token>")
+    def view_by_token(token):
+        """Serve file by share token; no path from client."""
+        db_path = app.config.get("DATABASE_PATH")
+        if not db_path:
+            abort(503)
+        import share_store
+        row = share_store.get_by_token(db_path, token)
+        print(row)
+        print(share_store.is_share_active(row))
+        if not row or not share_store.is_share_active(row):
+            abort(404)
+        file_path = row["file_path"]
+        root = app.config["MEDIA_ROOT"]
+        resolved = resolve_under_root(root, file_path, must_be_file=True)
+        if resolved is None or not resolved.is_file():
+            abort(404)
+        filename = _sanitize_unicode(resolved.name)
+        stream_url = url_for("view_by_token", token=token)
+        download_url = url_for("view_by_token", token=token, download=1)
+        return serve_resolved_file(
+            resolved, stream_url, download_url, filename,
+            show_share=False, path_for_share="",
+        )
+
+
+if _MODE == "private":
+    _register_private_routes()
+else:
+    _register_public_routes()
+    # Public: optional catch-all 404 for /
+    @app.route("/")
+    def public_index():
+        abort(404)
 
 
 # -----------------------------------------------------------------------------

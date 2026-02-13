@@ -2,7 +2,7 @@
 {% block title %}Audio{% endblock %}
 {% block file_content %}
   <div class="view-media-wrap">
-    <audio controls preload="metadata" src="{{ url_for('view', path=path) }}">
+    <audio controls preload="metadata" src="{{ stream_url }}">
       Your browser does not support the audio tag.
     </audio>
   </div>

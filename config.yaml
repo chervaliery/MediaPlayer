@@ -1,3 +1,14 @@
+# private | public: which routes to enable
+mode: private
+
 # Root directory for media browsing. Must exist and be a directory at startup.
-# Use /var/media on the server; use ./media for local testing (create the dir if needed).
 media_root: ./media
+
+# SQLite path for share links (same path for both private and public processes)
+database: ./data/shares.db
+
+# Default TTL for new share links in seconds (e.g. 86400 = 24h)
+share_default_expiry_seconds: 86400
+
+# Public app base URL for building share links (e.g. https://public.example.com)
+public_base_url: https://public.example.com

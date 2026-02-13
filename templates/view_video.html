@@ -2,7 +2,7 @@
 {% block title %}Video{% endblock %}
 {% block file_content %}
   <div class="view-media-wrap">
-    <video controls preload="metadata" src="{{ url_for('view', path=path) }}">
+    <video controls preload="metadata" src="{{ stream_url }}">
       Your browser does not support the video tag.
     </video>
   </div>

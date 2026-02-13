@@ -2,6 +2,12 @@
 import pytest
 
 from app import app as flask_app
+import share_store
+
+
+# Register public route so we can test GET /v/<token> (app normally has only private or only public)
+from app import _register_public_routes
+_register_public_routes()
 
 
 @pytest.fixture
@@ -18,11 +24,16 @@ def media_root(tmp_path):
 
 @pytest.fixture
 def client(media_root):
-    """Flask test client with MEDIA_ROOT patched to a temporary directory."""
-    original = flask_app.config["MEDIA_ROOT"]
+    """Flask test client with MEDIA_ROOT and DATABASE_PATH patched to temp paths."""
+    original_root = flask_app.config["MEDIA_ROOT"]
+    original_db = flask_app.config.get("DATABASE_PATH")
+    db_path = str(media_root / "shares.db")
     flask_app.config["MEDIA_ROOT"] = media_root
+    flask_app.config["DATABASE_PATH"] = db_path
+    share_store.init(db_path)
     try:
         with flask_app.test_client() as test_client:
             yield test_client
     finally:
-        flask_app.config["MEDIA_ROOT"] = original
+        flask_app.config["MEDIA_ROOT"] = original_root
+        flask_app.config["DATABASE_PATH"] = original_db

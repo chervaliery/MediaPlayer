@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Share link{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('browse') }}" class="view-back">Back to browse</a></p>
+  <h1 class="browse-heading">Share link</h1>
+  <div class="share-card">
+    {% if revoked %}<p class="share-msg">Link revoked.</p>{% endif %}
+    <p class="share-url-row">
+      <label for="share-url">Public URL:</label>
+      <input type="text" id="share-url" value="{{ public_url }}" readonly class="share-url-input">
+      <button type="button" id="share-copy" class="share-copy-btn">Copy</button>
+    </p>
+    <form method="post" action="{{ url_for('share_revoke') }}" class="share-revoke-form">
+      <input type="hidden" name="token" value="{{ token }}">
+      <button type="submit" class="share-revoke-btn">Revoke link</button>
+    </form>
+  </div>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function() {
+      var input = document.getElementById("share-url");
+      var btn = document.getElementById("share-copy");
+      if (!input || !btn) return;
+      btn.addEventListener("click", function() {
+        input.select();
+        input.setSelectionRange(0, 99999);
+        try {
+          navigator.clipboard.writeText(input.value);
+          btn.textContent = "Copied";
+          setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+        } catch (e) {}
+      });
+    })();
+  </script>
+{% endblock %}
