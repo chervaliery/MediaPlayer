@@ -95,6 +95,10 @@ def resolve_under_root(
     """
     Resolve a relative path under root. Returns absolute Path or None if invalid.
     Prevents path traversal (e.g. .. or symlinks outside root).
+
+    Production (e.g. Apache mod_wsgi) must run with UTF-8 locale so paths with
+    non-ASCII characters (e.g. French accents) resolve correctly. Set
+    lang='en_US.UTF-8' on WSGIDaemonProcess (or LANG/LC_ALL in the process env).
     """
     parts = [part for part in relative.strip().split(os.sep) if part and part != "."]
     if ".." in parts:

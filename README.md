@@ -61,7 +61,7 @@ The app runs inside Apache using mod_wsgi. Authentication is handled by Apache (
 3. Add a site or drop-in config. Example for serving the app at the root of a virtual host:
 
    ```apache
-   WSGIDaemonProcess player user=www-data group=www-data python-home=/var/www/player/venv
+   WSGIDaemonProcess player user=www-data group=www-data python-home=/var/www/player/venv lang=en_US.UTF-8
    WSGIProcessGroup player
    WSGIScriptAlias / /var/www/player/wsgi.py
 
@@ -69,6 +69,8 @@ The app runs inside Apache using mod_wsgi. Authentication is handled by Apache (
        Require all granted
    </Directory>
    ```
+
+   **Important:** `lang=en_US.UTF-8` is required if your media paths or filenames contain non-ASCII characters (e.g. French accents). Without it, the WSGI process may run with C locale and raise `UnicodeEncodeError` when resolving or listing such paths. Use a locale that exists on the server (e.g. `en_US.UTF-8`, `fr_FR.UTF-8`).
 
    Adjust paths to match your setup. To mount the app under a subpath (e.g. `/media`), use:
 
